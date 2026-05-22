@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Navbar from '../components/Navbar';
 import { Head } from '@inertiajs/react';
 
@@ -29,11 +29,16 @@ export default function GlycoSmoke() {
     visceralFatRisk: '-',
   });
 
+  // MINI-GAME STATE (Breather / Cardio-Lung Test)
+  const [breatherState, setBreatherState] = useState('idle'); // idle, inhale, success, fail
+  const [breatherProgress, setBreatherProgress] = useState(0);
+  const breatherTimerRef = useRef(null);
+
   // =========================================
-  // GLOBAL STYLE
+  // SYSTEM STYLE ADJUSTMENTS (Matches Dashboard)
   // =========================================
   const cardStyle =
-    'glass-panel rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(244,63,94,0.05)]';
+    'bg-white rounded-3xl p-6 border border-slate-100 flex flex-col justify-between transition-all duration-300 shadow-sm hover:shadow-md';
 
   // =========================================
   // COUNTDOWN TIMER TICK ENGINE
@@ -73,17 +78,52 @@ export default function GlycoSmoke() {
   }, [isTimerActive]);
 
   // =========================================
+  // LOGIKA MINI-GAME: BREATHER TEST
+  // =========================================
+  const startBreatherTest = () => {
+    setBreatherState('inhale');
+    setBreatherProgress(0);
+    
+    const breathDifficultyFactor = inputType === 'batang' ? dailyCount * 12 : dailyCount * 1.5;
+    const intervalSpeed = Math.max(40, 120 - breathDifficultyFactor);
+
+    breatherTimerRef.current = setInterval(() => {
+      setBreatherProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(breatherTimerRef.current);
+          setBreatherState('success');
+          return 100;
+        }
+        return prev + 2;
+      });
+    }, intervalSpeed);
+  };
+
+  const stopBreatherTest = () => {
+    clearInterval(breatherTimerRef.current);
+    if (breatherState === 'inhale') {
+      if (breatherProgress < 75) {
+        setBreatherState('fail');
+      } else {
+        setBreatherState('success');
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => clearInterval(breatherTimerRef.current);
+  }, []);
+
+  // =========================================
   // HELPER FUNCTIONS & MEMOIZED CALCULATIONS
   // =========================================
-  
-  // Mencegah kalkulasi finansial berulang setiap detik akibat detak timer
   const finansial = useMemo(() => {
     if (detectedPrice === 0) return { bulanan: 0, tahunan: 0 };
 
     let bulanan = 0;
     if (inputType === 'puffs') {
-      const hargaVapeDibatasi = Math.max(50000, Math.min(110000, detectedPrice));
-      const biayaPerPuff = hargaVapeDibatasi / 400; 
+      const hargaVapeDibatasi = Math.max(50000, Math.min(180000, detectedPrice));
+      const biayaPerPuff = hargaVapeDibatasi / 600; 
       bulanan = Math.floor(biayaPerPuff * dailyCount * 30);
     } else {
       const hargaPerBatang = Math.floor(detectedPrice / 16); 
@@ -121,19 +161,19 @@ export default function GlycoSmoke() {
 
   const hitungTotalMenitRecovery = () => {
     if (dailyCount === 0) return 120; 
-    const menitPemulihan = inputType === 'batang' ? dailyCount * 30 : dailyCount * 3;
+    const menitPemulihan = inputType === 'batang' ? dailyCount * 35 : dailyCount * 4;
     return Math.min(1440, menitPemulihan);
   };
 
   const toxLevel = useMemo(() => {
     if (!isAnalyzed) return 0;
     if (inputType === 'batang') {
-      if (dailyCount <= 3) return 0;
+      if (dailyCount <= 4) return 0;
       if (dailyCount <= 12) return 1;
       return 2;
     }
-    if (dailyCount <= 50) return 0;
-    if (dailyCount <= 200) return 1;
+    if (dailyCount <= 60) return 0;
+    if (dailyCount <= 220) return 1;
     return 2;
   }, [isAnalyzed, inputType, dailyCount]);
 
@@ -141,26 +181,26 @@ export default function GlycoSmoke() {
     if (toxLevel === 0) {
       return {
         text: 'Sel Normal',
-        color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-        lungBg: 'from-emerald-500/10 to-emerald-600/10 text-emerald-400 border-emerald-500/20 shadow-[inset_0_0_30px_rgba(16,185,129,0.2)]',
+        color: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+        lungBg: 'bg-emerald-50 border-emerald-100 text-emerald-500 shadow-inner',
       };
     }
     if (toxLevel === 1) {
       return {
         text: 'Inflamasi',
-        color: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
-        lungBg: 'from-amber-500/10 to-amber-600/10 text-amber-500 border-amber-500/20 shadow-[inset_0_0_30px_rgba(245,158,11,0.2)]',
+        color: 'text-amber-600 bg-amber-50 border-amber-100',
+        lungBg: 'bg-amber-50 border-amber-100 text-amber-500 shadow-inner',
       };
     }
     return {
       text: 'Kritis',
-      color: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
-      lungBg: 'from-rose-950/40 to-slate-900 text-rose-600 border-rose-500/30 shadow-[inset_0_0_40px_rgba(225,29,72,0.3)]',
+      color: 'text-rose-600 bg-rose-50 border-rose-100',
+      lungBg: 'bg-rose-50 border-rose-100 text-rose-500 shadow-inner',
     };
   }, [toxLevel]);
 
   // =========================================
-  // AI ANALYSIS AUDIT EXECUTION
+  // INTEGRASI API GEMINI (DENGAN KEY POOL)
   // =========================================
   const executeSmokeAudit = async () => {
     if (!smokeDeviceInput.trim()) {
@@ -171,20 +211,68 @@ export default function GlycoSmoke() {
     setIsLoading(true);
     setIsAnalyzed(false);
 
-    setTimeout(() => {
-      const totalMenit = hitungTotalMenitRecovery();
-      const jamMundur = Math.floor(totalMenit / 60);
-      const menitMundur = totalMenit % 60;
+    const apiKeysPool = [
+      import.meta.env.VITE_API_KEY_POOL_1,
+      import.meta.env.VITE_API_KEY_POOL_2,
+      import.meta.env.VITE_API_KEY_POOL_3,
+      import.meta.env.VITE_API_KEY_POOL_4
+    ];
 
-      setAiAnalysis(
-        `Berdasarkan audit sirkadian, paparan ${dailyCount} ${inputType === 'batang' ? 'batang' : 'puffs'} nikotin dari "${smokeDeviceInput}" memicu blokade akut pada reseptor pemintas gula GLUT4. Tubuh Anda membutuhkan waktu karantina biologis selama minimum ${jamMundur} Jam ${menitMundur} Menit tanpa asap untuk mengembalikan sensitivitas serapan insulin selular ke ambang batas normal.`
+    // Ambil kunci acak dari kolam API key
+    const selectedKey = apiKeysPool[Math.floor(Math.random() * apiKeysPool.length)];
+    const totalMenit = hitungTotalMenitRecovery();
+    const jamMundur = Math.floor(totalMenit / 60);
+    const menitMundur = totalMenit % 60;
+
+    // Menentukan estimasi harga default sebelum disesuaikan oleh struktur AI
+    const basePriceEstimate = inputType === 'puffs' ? 95000 : 42000;
+
+    // Konstruksi prompt klinis / patologis ketat untuk model AI
+    const promptText = `Anda adalah sistem pakar endokrinologi dan patologi metabolik sirkadian tingkat lanjut. 
+    Lakukan analisis mendalam mengenai dampak penggunaan zat hisap berikut:
+    - Nama Produk Perangkat: "${smokeDeviceInput}"
+    - Tipe Konsumsi: ${inputType}
+    - Jumlah Intensitas Harian: ${dailyCount} ${inputType === 'batang' ? 'Batang' : 'Puffs'}
+
+    Berikan output dalam format JSON mentah tanpa format markdown (jangan gunakan blok \`\`\`json). Struktur JSON wajib seperti ini:
+    {
+      "clinicalAnalysis": "Tulis penjelasan patologis ilmiah yang padat (maksimal 3 kalimat) mengenai bagaimana zat ini menghambat sensitivitas serapan insulin pada reseptor GLUT4 jaringan otot dan memicu hipoksia selular.",
+      "estimatedPricePerPackOrPod": 42000
+    }
+    Pastikan "estimatedPricePerPackOrPod" berupa angka integer murni yang realistis untuk pasar Indonesia.`;
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${selectedKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }]
+          })
+        }
       );
 
-      setDetectedPrice(inputType === 'puffs' ? 85000 : 38000);
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      // Bersihkan karakter blok kode jika model AI tidak sengaja menyertakannya
+      const cleanJsonString = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsedResult = JSON.parse(cleanJsonString);
 
+      setAiAnalysis(parsedResult?.clinicalAnalysis || `Paparan kronis dari "${smokeDeviceInput}" memicu cekaman stres oksidatif sistemik.`);
+      setDetectedPrice(Number(parsedResult?.estimatedPricePerPackOrPod) || basePriceEstimate);
+
+    } catch (error) {
+      console.error("Gemini API Error, memicu fallback data lokal...", error);
+      // Fallback deterministik jika API limit/error
+      setAiAnalysis(`Inhalasi berkelanjutan dari perangkat "${smokeDeviceInput}" memicu blokade fungsional akut pada reseptor pemintas gula selular GLUT4. Tubuh memerlukan fase detoksifikasi sirkadian bebas asap.`);
+      setDetectedPrice(basePriceEstimate);
+    } finally {
+      // Mengisi metrik biologi fungsional pendukung halaman
       setSmokeMetrics({
         dailyInsulinParalysis: `${jamMundur} Jam`,
-        lungCapacityDamage: `${Math.min(78, Math.round(dailyCount * (inputType === 'batang' ? 2.5 : 0.15)))}%`,
+        lungCapacityDamage: `${Math.min(88, Math.round(dailyCount * (inputType === 'batang' ? 3.0 : 0.2)))}%`,
         visceralFatRisk: toxLevel === 2 ? 'Kritis' : toxLevel === 1 ? 'Tinggi' : 'Normal',
       });
 
@@ -197,74 +285,41 @@ export default function GlycoSmoke() {
       setIsTimerActive(true);
       setIsAnalyzed(true);
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
   const SectionTitle = ({ number, title }) => (
-    <div className="flex items-center gap-3">
-      <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center text-[10px] font-bold font-mono shadow-inner">
+    <div className="flex items-center gap-2 mb-4">
+      <div className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 text-blue-600 text-[10px] font-bold font-mono">
         {number}
       </div>
-      <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 font-mono">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
         {title}
       </h3>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 pt-28 pb-20 relative overflow-x-hidden selection:bg-rose-500/30 selection:text-white">
-      <Head title="GlycoFlow AI - GlycoSmoke" />
+    <div className="min-h-screen bg-slate-50 text-slate-800 pt-28 pb-20 selection:bg-blue-500/10 selection:text-blue-600">
+      <Head title="GlycoFlow AI - GlycoSmoke Audit" />
       <Navbar />
 
-      <style>{`
-        @keyframes auroraRose {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .bg-aurora-rose {
-          background: linear-gradient(-45deg, #0f172a, #4c0519, #0f172a, #1e1b4b);
-          background-size: 400% 400%;
-          animation: auroraRose 25s ease infinite;
-        }
-        .glass-panel {
-          background: rgba(15, 23, 42, 0.6);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        }
-        .custom-font { font-family: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .cyber-grid {
-          background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-          background-size: 30px 30px;
-        }
-      `}</style>
-
-      <div className="fixed inset-0 bg-aurora-rose z-0 pointer-events-none" />
-      <div className="fixed inset-0 cyber-grid z-0 pointer-events-none opacity-40" />
-      <div className="fixed top-[-20%] right-[-10%] w-200 h-200 bg-rose-600/10 rounded-full blur-[150px] pointer-events-none z-0 mix-blend-screen" />
-      <div className="fixed bottom-[-20%] left-[-10%] w-200 h-200 bg-indigo-600/10 rounded-full blur-[150px] pointer-events-none z-0 mix-blend-screen" />
-
-      <main className="relative z-10 w-full px-4 sm:px-6 lg:px-10 xl:px-12 2xl:px-16 flex flex-col gap-8">
+      <main className="w-full max-w-7xl mx-auto px-4 flex flex-col gap-6 relative z-10">
         
         {/* PAGE HEADER */}
-        <section className="glass-panel rounded-3xl p-6 md:p-8 flex flex-col lg:flex-row justify-between items-center gap-6 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-rose-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-          <div className="relative z-10 text-center lg:text-left flex-1">
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-rose-500/30 bg-rose-500/10 text-[10px] font-mono text-rose-400 font-bold uppercase tracking-widest mb-3">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+        <section className="bg-white rounded-3xl p-6 border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
+          <div>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-blue-100 bg-blue-50 text-[10px] font-medium text-blue-600 uppercase tracking-wider mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
               Hormonal Stress Mapping
             </span>
-            <h1 className="text-3xl md:text-4xl font-black text-white custom-font tracking-tight">
-              Gerhana Insulin <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-orange-400">Pasca Nikotin</span>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              Gerhana Insulin <span className="text-blue-600">Pasca Nikotin</span>
             </h1>
           </div>
-          <div className="relative z-10 px-5 py-2 bg-slate-900/50 border border-slate-700 rounded-2xl flex items-center gap-3">
-            <div className={`w-2 h-2 rounded-full bg-rose-500 absolute ${isTimerActive ? 'animate-ping' : ''}`} />
-            <div className="w-2 h-2 rounded-full bg-rose-500 relative" />
-            <span className="text-[10px] font-mono font-bold tracking-widest text-slate-300 uppercase">
+          <div className="px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2">
+            <div className={`w-1.5 h-1.5 rounded-full bg-blue-500 ${isTimerActive ? 'animate-ping' : ''}`} />
+            <span className="text-[10px] font-mono font-bold tracking-wider text-slate-500 uppercase">
               {isTimerActive ? 'Toxicology Active' : 'System Idle'}
             </span>
           </div>
@@ -273,38 +328,38 @@ export default function GlycoSmoke() {
         {/* BENTO GRID LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
           
-          {/* KOLOM KIRI: INPUT PANEL CONTROLLER */}
+          {/* KOLOM 1: INPUT CONTROLLER PANEL */}
           <div className="space-y-6 flex flex-col justify-between">
-            <div className={`${cardStyle} flex-1 gap-5`}>
+            <div className={`${cardStyle} flex-1`}>
               <div>
-                <SectionTitle number="01" title="Input Toksik" />
+                <SectionTitle number="01" title="Input Parameter Toksik" />
                 
-                <div className="space-y-2 mt-5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nama Rokok / Vape</label>
+                <div className="space-y-2 mt-4">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Nama Rokok / Vape / Pods</label>
                   <input
                     type="text"
                     value={smokeDeviceInput}
                     onChange={(e) => setSmokeDeviceInput(e.target.value)}
-                    placeholder="Marlboro / Liquid Mango"
-                    className="w-full bg-slate-900/60 border border-slate-700 rounded-2xl px-4 py-3.5 text-sm outline-none text-white focus:bg-slate-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500/30 transition-all font-medium shadow-inner"
+                    placeholder="Contoh: Marlboro / Liquid Mango / Relx"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none text-slate-800 focus:bg-white focus:border-blue-500 transition-all font-medium"
                   />
                 </div>
 
-                {/* SWITCH TYPE WITH FIX LOGIC */}
-                <div className="grid grid-cols-2 gap-3 mt-4">
+                {/* SWITCH SELECTION */}
+                <div className="grid grid-cols-2 gap-2 mt-4">
                   <button
                     type="button"
                     onClick={() => {
                       setInputType('batang');
                       setDailyCount((prev) => Math.min(40, prev)); 
                     }}
-                    className={`py-3 rounded-xl font-bold text-[10px] uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider border transition-all cursor-pointer ${
                       inputType === 'batang'
-                        ? 'bg-rose-500 text-slate-950 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
-                        : 'bg-slate-900/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    🚬 Rokok
+                    🚬 Rokok / Batang
                   </button>
 
                   <button
@@ -313,20 +368,21 @@ export default function GlycoSmoke() {
                       setInputType('puffs');
                       setDailyCount((prev) => prev === 5 ? 120 : prev); 
                     }}
-                    className={`py-3 rounded-xl font-bold text-[10px] uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider border transition-all cursor-pointer ${
                       inputType === 'puffs'
-                        ? 'bg-rose-500 text-slate-950 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
-                        : 'bg-slate-900/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    ⚡ Vape
+                    ⚡ Vape / Puffs
                   </button>
                 </div>
 
-                <div className="space-y-3 mt-6">
-                  <div className="flex justify-between text-[11px] font-bold text-slate-400">
-                    <span>Intensitas Harian</span>
-                    <span className="font-mono bg-slate-800 px-2.5 py-0.5 rounded-lg text-[10px] border border-slate-700 text-white">
+                {/* INTENSITY SLIDER */}
+                <div className="space-y-2 mt-5">
+                  <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                    <span>Intensitas Konsumsi Harian</span>
+                    <span className="font-mono bg-slate-100 px-2 py-0.5 rounded-md text-[10px] border border-slate-200 text-slate-700">
                       {dailyCount} {inputType === 'batang' ? 'Batang' : 'Puffs'}
                     </span>
                   </div>
@@ -336,15 +392,15 @@ export default function GlycoSmoke() {
                     max={inputType === 'batang' ? 40 : 500}
                     value={dailyCount}
                     onChange={(e) => setDailyCount(Number(e.target.value))}
-                    className="w-full accent-rose-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg appearance-none hover:accent-rose-400 transition-all"
+                    className="w-full accent-blue-600 cursor-pointer h-1 bg-slate-200 rounded-lg appearance-none transition-all"
                   />
                 </div>
               </div>
 
-              <div className="space-y-4 pt-5 border-t border-slate-800 mt-4">
+              <div className="space-y-4 pt-4 border-t border-slate-100 mt-6">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Fase Toksisitas:</span>
-                  <div className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-wider transition-all duration-300 ${isAnalyzed ? statusLabel.color : 'text-slate-400 bg-slate-800 border-slate-700'}`}>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Status Toksisitas:</span>
+                  <div className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${isAnalyzed ? statusLabel.color : 'text-slate-400 bg-slate-50 border-slate-200'}`}>
                     {isAnalyzed ? statusLabel.text : 'Idle'}
                   </div>
                 </div>
@@ -353,87 +409,121 @@ export default function GlycoSmoke() {
                   type="button"
                   onClick={executeSmokeAudit}
                   disabled={isLoading}
-                  className="w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-xs tracking-widest uppercase shadow-[0_0_15px_rgba(225,29,72,0.4)] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-sm cursor-pointer disabled:opacity-50 active:scale-[0.99]"
                 >
-                  {isLoading ? 'Menganalisis Efek Epigenetik...' : 'JALANKAN AUDIT METABOLIK'}
+                  {isLoading ? 'Menganalisis Keterkaitan Epigenetik...' : 'Jalankan Audit Metabolik'}
                 </button>
               </div>
             </div>
           </div>
 
-          {/* KOLOM TENGAH: LUNGS VISUALIZATION & OXYGEN (DENGAN INTEGRASI PARU DINAMIS) */}
+          {/* KOLOM 2: LUNG VISUALIZATION & INTERACTIVE RETENTION TEST */}
           <div className="space-y-6 flex flex-col justify-between">
             <div className={`${cardStyle} flex-1 justify-start`}>
-              <SectionTitle number="02" title="Visualisasi Paru" />
-              <div className="flex flex-col items-center justify-center my-auto py-6">
-                {/* Ikon Paru-Paru Utama dengan Animasi Pulse Berdasarkan Keadaan Analisis */}
-                <div className={`w-44 h-44 rounded-full bg-gradient-to-br transition-all duration-700 ease-in-out flex items-center justify-center text-7xl select-none ${isAnalyzed ? statusLabel.lungBg : 'from-slate-800 to-slate-900/50 text-slate-600 border border-slate-800 shadow-inner'} ${isTimerActive ? 'animate-pulse' : ''}`}>
+              <SectionTitle number="02" title="Visualisasi Paru & Diagnostik" />
+              
+              {/* MINI REFLEX GAME CARD */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center mb-4">
+                <span className="text-[9px] font-mono text-blue-600 block font-bold mb-1">🎮 MINI GAME: CARDIO-LUNG BREATHER</span>
+                
+                {breatherState === 'idle' && (
+                  <div>
+                    <p className="text-[10px] text-slate-500 mb-2">Uji ambang toleransi retensi sirkulasi oksigen paru Anda.</p>
+                    <button onClick={startBreatherTest} className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[9px] transition-all cursor-pointer">Mulai Tes Tahan Napas</button>
+                  </div>
+                )}
+
+                {breatherState === 'inhale' && (
+                  <div className="space-y-2">
+                    <p className="text-[9px] text-amber-600 font-bold animate-pulse">KLIK & TAHAN TOMBOL DI BAWAH HINGGA BAR 100%!</p>
+                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+                      <div style={{ width: `${breatherProgress}%` }} className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-75" />
+                    </div>
+                    <button onMouseDown={startBreatherTest} onMouseUp={stopBreatherTest} onTouchStart={startBreatherTest} onTouchEnd={stopBreatherTest} className="w-full py-1.5 bg-blue-600 text-white font-bold rounded-lg text-[10px] select-none active:scale-95 cursor-pointer">TAHAN DISINI</button>
+                  </div>
+                )}
+
+                {breatherState === 'success' && (
+                  <div className="text-emerald-700 text-[10px] font-medium">
+                    🎉 <strong>Berhasil!</strong> Kapasitas elastisitas kompensasi seluler paru Anda terdeteksi stabil.
+                    <button onClick={() => setBreatherState('idle')} className="block mx-auto mt-1 text-[9px] underline text-slate-400">Reset</button>
+                  </div>
+                )}
+
+                {breatherState === 'fail' && (
+                  <div className="text-rose-700 text-[10px] font-medium">
+                    ⚠️ <strong>Refleks Terhenti!</strong> Terjadi hambatan mekanis ekspansi paru akibat paparan fungsional.
+                    <button onClick={() => setBreatherState('idle')} className="block mx-auto mt-1 text-[9px] underline text-slate-400">Ulangi</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Lung Graphic Container */}
+              <div className="flex flex-col items-center justify-center my-auto py-4">
+                <div className={`w-32 h-32 rounded-full border transition-all duration-700 ease-in-out flex items-center justify-center text-5xl select-none ${isAnalyzed ? statusLabel.lungBg : 'bg-slate-50 border-slate-200 text-slate-400 shadow-inner'} ${isTimerActive ? 'animate-pulse' : ''}`}>
                   🫁
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium text-center mt-6 max-w-55 leading-relaxed">
-                  Peta akumulasi biomarker karbon monoksida (CO) dan stres oksidatif paru harian.
-                </p>
               </div>
             </div>
 
-            <div className={`${cardStyle} h-36 flex-row items-center justify-between gap-4`}>
-              <div className="space-y-2">
+            <div className={`${cardStyle} h-32 flex-row items-center justify-between gap-4`}>
+              <div className="space-y-1">
                 <SectionTitle number="03" title="Kadar Oksigen" />
-                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider pt-2">Saturasi Oksigen Selular</p>
-                <h2 className="text-4xl font-black text-white font-mono tracking-tighter">
+                <p className="text-slate-400 text-[9px] font-bold uppercase tracking-wider">Saturasi Oksigen Selular</p>
+                <h2 className="text-3xl font-black text-slate-800 font-mono tracking-tighter">
                   {isAnalyzed ? `${kadarOksigen}%` : '99%'}
                 </h2>
               </div>
-              <div className="w-16 h-16 rounded-2xl bg-slate-900/50 border border-slate-700/50 flex items-center justify-center text-2xl shadow-inner">
+              <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-xl shadow-inner">
                 💨
               </div>
             </div>
           </div>
 
-          {/* KOLOM KANAN: FINANCIAL & BIOLOGICAL METRICS */}
+          {/* KOLOM 3: FINANCIAL & BIOLOGICAL METRICS */}
           <div className="space-y-6 flex flex-col justify-between">
             <div className={`${cardStyle} flex-1`}>
-              <SectionTitle number="04" title="Finansial & Aset" />
+              <SectionTitle number="04" title="Finansial & Alternatif Aset" />
               
-              <div className="grid grid-cols-2 gap-3 my-4">
-                <div className="bg-slate-900/50 border border-slate-700/50 rounded-2xl p-4 shadow-inner">
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-1">Bulanan</p>
-                  <h2 className="text-sm font-black text-white font-mono">
+              <div className="grid grid-cols-2 gap-3 my-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-inner">
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Biaya Bulanan</p>
+                  <h2 className="text-xs font-bold text-slate-800 font-mono">
                     Rp {finansial.bulanan.toLocaleString('id-ID')}
                   </h2>
                 </div>
 
-                <div className="bg-rose-900/20 border border-rose-500/30 rounded-2xl p-4 shadow-inner">
-                  <p className="text-[9px] text-rose-400 font-bold uppercase tracking-wider mb-1">Tahunan</p>
-                  <h2 className="text-sm font-black text-rose-400 font-mono drop-shadow-[0_0_8px_rgba(244,63,94,0.4)]">
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 shadow-inner">
+                  <p className="text-[9px] text-blue-500 font-bold uppercase tracking-wider mb-0.5">Akumulasi Tahunan</p>
+                  <h2 className="text-xs font-bold text-blue-600 font-mono">
                     Rp {finansial.tahunan.toLocaleString('id-ID')}
                   </h2>
                 </div>
               </div>
 
-              <div className="bg-slate-900/40 border border-slate-700/50 rounded-xl p-4 shadow-inner">
-                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-1">Konversi Tabungan Setara:</p>
-                <h2 className="text-sm font-black text-white truncate">{aset.nama}</h2>
-                <p className="text-[10px] text-emerald-400 font-medium truncate mt-0.5">{aset.spek}</p>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-inner">
+                <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider mb-0.5">💡 Setara Pengalihan Investasi:</p>
+                <h2 className="text-xs font-bold text-slate-800 truncate">{aset.nama}</h2>
+                <p className="text-[9px] text-slate-400 font-medium truncate mt-0.5">{aset.spek}</p>
               </div>
             </div>
 
             <div className={`${cardStyle} flex-1`}>
               <SectionTitle number="05" title="Biological Metrics" />
-              <div className="space-y-3 mt-4">
-                <div className="flex justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-700/50 shadow-inner">
-                  <span className="text-[11px] font-medium text-slate-300">Lumpuhnya Insulin</span>
-                  <span className="font-bold text-rose-400 font-mono text-[11px]">{smokeMetrics.dailyInsulinParalysis}</span>
+              <div className="space-y-2 mt-2">
+                <div className="flex justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs shadow-inner">
+                  <span className="text-slate-500">Blokade Reseptor Insulin</span>
+                  <span className="font-bold text-rose-600 font-mono">{smokeMetrics.dailyInsulinParalysis}</span>
                 </div>
 
-                <div className="flex justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-700/50 shadow-inner">
-                  <span className="text-[11px] font-medium text-slate-300">Beban Kapasitas Paru</span>
-                  <span className="font-bold text-slate-100 font-mono text-[11px]">{smokeMetrics.lungCapacityDamage}</span>
+                <div className="flex justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs shadow-inner">
+                  <span className="text-slate-500">Beban Kapasitas Paru</span>
+                  <span className="font-bold text-slate-700 font-mono">{smokeMetrics.lungCapacityDamage}</span>
                 </div>
 
-                <div className="flex justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-700/50 shadow-inner">
-                  <span className="text-[11px] font-medium text-slate-300">Penuaan Epidermal</span>
-                  <span className="font-bold text-indigo-400 font-mono text-[11px]">+{isAnalyzed ? penuaanKulit : 0} Tahun</span>
+                <div className="flex justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs shadow-inner">
+                  <span className="text-slate-500">Penuaan Kerutan Kulit</span>
+                  <span className="font-bold text-indigo-600 font-mono">+{isAnalyzed ? penuaanKulit : 0} Tahun</span>
                 </div>
               </div>
             </div>
@@ -441,23 +531,23 @@ export default function GlycoSmoke() {
 
         </div>
 
-        {/* BOTTOM BAR: TIMER & RESPONS AI CORE */}
+        {/* BOTTOM SECTION: RESPONS TIMER RECOVERY & AI TEXT ENGINE */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          <div className={`${cardStyle} lg:col-span-4 text-center justify-between h-45 lg:h-auto border-t-4 border-t-rose-500/50`}>
-            <SectionTitle number="06" title="Recovery Timer" />
-            <div className="my-auto text-4xl font-black font-mono tracking-widest text-rose-400 bg-slate-900/80 py-4 rounded-2xl border border-slate-700 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] drop-shadow-[0_0_8px_rgba(244,63,94,0.3)]">
+          <div className={`${cardStyle} lg:col-span-4 text-center justify-between border-t-2 border-t-blue-500`}>
+            <SectionTitle number="06" title="Recovery Timer Clock" />
+            <div className="my-3 text-3xl font-bold font-mono tracking-wider text-blue-600 bg-slate-50 py-3 rounded-xl border border-slate-200 shadow-inner">
               {String(countdown.hours).padStart(2, '0')}:
               {String(countdown.minutes).padStart(2, '0')}:
               {String(countdown.seconds).padStart(2, '0')}
             </div>
-            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
-              Waktu Re-Sensitisasi Reseptor Sel GLUT4 Otot
+            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+              Durasi Sensitisasi Ulang Reseptor Jalur GLUT4
             </p>
           </div>
 
-          <div className={`${cardStyle} lg:col-span-8 justify-start border-t-4 border-t-indigo-500/50`}>
+          <div className={`${cardStyle} lg:col-span-8 justify-start border-t-2 border-t-indigo-500`}>
             <SectionTitle number="07" title="AI Pathological Analysis Engine" />
-            <div className="mt-4 text-xs text-slate-300 leading-relaxed font-medium bg-slate-900/50 p-5 rounded-2xl border border-dashed border-slate-600 shadow-inner h-28 overflow-y-auto">
+            <div className="mt-2 text-xs text-slate-600 leading-relaxed font-medium bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 shadow-inner h-24 overflow-y-auto">
               {aiAnalysis || 'Jalankan audit kalkulasi toksisitas sirkadian di panel kiri untuk memicu penalaran klinis endokrinologi berbasis kecerdasan buatan.'}
             </div>
           </div>

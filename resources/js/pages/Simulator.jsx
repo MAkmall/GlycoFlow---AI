@@ -199,11 +199,12 @@ export default function Simulator() {
     setPredictedSpike(0);
     setMetrics({ name: 'Memindai...', cal: '0', protein: '0', carbs: '0', fat: '0', marketingTrap: 'Mengekstrak...', cellDamage: '0', walkSteps: '0', kitchenAntidote: 'Menghitung...' });
 
-    const keysPool = [
-      { name: "Kunci Utama", key: import.meta.env.VITE_GEMINI_API_KEY },
-      { name: "Cadangan 1", key: import.meta.env.VITE_GEMINI_API_KEY_BACKUP },
-      { name: "Cadangan 2", key: import.meta.env.VITE_GEMINI_KEY_BACKUP2 },
-      { name: "Cadangan 3", key: import.meta.env.VITE_GEMINI_KEY_BACKUP3 }
+    // POOL KUNCI API KELUARAN BARU SEGAR (Mekanisme Failover Sinkronis)
+    const apiKeysPool = [
+      "AIzaSyBJBciCxG-CoLZsPqPM0UOV0O1-7Sew9J0", 
+      "AIzaSyD9apvS-uBU401LpH8LM9rkLIU4Lya_NkI", 
+      "AIzaSyAQiAw0y0HDQgfCifYguU2oJLcG1u7Bfx4", 
+      "AIzaSyAY-ciIROyX_8pPL0EUbNbr-UNfD6NoRCM"  
     ];
 
     const prompt = `Anda adalah Asisten Medis Nutrisi Klinis spesialis Rekayasa Metabolik dari Nuvica Health. 
@@ -229,12 +230,13 @@ export default function Simulator() {
       let data = null;
       let success = false;
 
-      for (let i = 0; i < keysPool.length; i++) {
-        const currentConfig = keysPool[i];
-        if (!currentConfig.key) continue;
+      // Iterasi seluruh cadangan pool kunci hingga mendapatkan repositori respons 200 OK
+      for (let i = 0; i < apiKeysPool.length; i++) {
+        const currentKey = apiKeysPool[i];
+        if (!currentKey) continue;
 
         try {
-          response = await sendRequestWithKey(currentConfig.key, imagePart, prompt);
+          response = await sendRequestWithKey(currentKey, imagePart, prompt);
           data = await response.json();
 
           if (response.ok && !data.error) {
@@ -242,12 +244,12 @@ export default function Simulator() {
             break; 
           }
         } catch (innerError) {
-          console.error(`💥 Gangguan Jaringan pada ${currentConfig.name}:`, innerError);
+          console.error(`💥 Gangguan Jaringan pada Kunci Indeks ke-${i}:`, innerError);
         }
       }
 
       if (!success) {
-        setAiAnalysis("⚠️ Server Google Gemini sedang overload massal atau kuota habis. Silakan coba beberapa saat lagi.");
+        setAiAnalysis("⚠️ Seluruh Pool API Key sedang overload massal atau kehabisan kuota kueri harian.");
         return;
       }
 
@@ -277,11 +279,11 @@ export default function Simulator() {
     setChatInput('');
     setIsChatLoading(true);
 
-    const keysPool = [
-      import.meta.env.VITE_GEMINI_API_KEY,
-      import.meta.env.VITE_GEMINI_API_KEY_BACKUP,
-      import.meta.env.VITE_GEMINI_KEY_BACKUP2,
-      import.meta.env.VITE_GEMINI_KEY_BACKUP3
+    const apiKeysPool = [
+      import.meta.env.VITE_API_KEY_POOL_1,
+      import.meta.env.VITE_API_KEY_POOL_2,
+      import.meta.env.VITE_API_KEY_POOL_3,
+      import.meta.env.VITE_API_KEY_POOL_4
     ];
 
     let aiReply = "";
@@ -289,16 +291,16 @@ export default function Simulator() {
 
     const chatPayload = {
       contents: [{
-        parts: [{ text: "Anda adalah Asisten Klinis cerdas untuk aplikasi kesehatan GlycoFlow AI. Jawablah dengan ringkas: " + query }]
+        parts: [{ text: "Anda adalah Asisten Klinis cerdas untuk aplikasi kesehatan GlycoFlow AI. Jawablah dengan ringkas dan solutif: " + query }]
       }]
     };
 
-    for (let i = 0; i < keysPool.length; i++) {
-      const activeKey = keysPool[i];
+    for (let i = 0; i < apiKeysPool.length; i++) {
+      const activeKey = apiKeysPool[i];
       if (!activeKey) continue;
 
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/generateContent?key=${activeKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -312,12 +314,12 @@ export default function Simulator() {
           break;
         }
       } catch (err) {
-        console.error("Chat network block:", err);
+        console.error("Chat network block at index " + i + ":", err);
       }
     }
 
     if (!success) {
-      aiReply = "Seluruh jalur konsultasi AI sedang padat kueri saat ini.";
+      aiReply = "Seluruh jalur cadangan konsultasi AI sedang mengalami kepadatan kueri saat ini.";
     }
 
     setChatMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
@@ -336,8 +338,8 @@ export default function Simulator() {
     }
   };
 
-  const sugarHeight = foodImage ? Math.min(44, Math.max(5, (displaySugarGram * 1.0))) : 0;
-  const sugarWidthRadius = foodImage ? Math.min(46, Math.max(15, (20 + displaySugarGram * 0.5))) : 0;
+  // Rasio progress bar penampung visualisasi kepadatan gula (maksimal 50 gram representasi penuh)
+  const sugarPercentage = foodImage ? Math.min(100, Math.max(0, (displaySugarGram / 50) * 100)) : 0;
 
   const dynamicCellDamage = foodImage ? parseInt(metrics.cellDamage) : 0;
   const isDangerous = dynamicCellDamage > 50;
@@ -354,7 +356,6 @@ export default function Simulator() {
   );
 
   return (
-    /* PERUBAHAN UTAMA: Menambahkan class 'moving-gradient-bg' untuk efek tepi luar bergerak */
     <div className="min-h-screen text-slate-800 p-4 md:p-8 pt-32 custom-font antialiased relative overflow-x-hidden moving-gradient-bg">
       <Head title="Clinical Analyzer - GlycoFlow AI" />
       <Navbar />
@@ -363,14 +364,12 @@ export default function Simulator() {
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=400;600;700;800&display=swap');
         .custom-font { font-family: 'Plus Jakarta Sans', sans-serif; }
         
-        /* 🌌 LOGIKA ANIMASI TEPI GRADASI BERGERAK (SOFT BLUE) */
         .moving-gradient-bg {
-          background-color: #F8FAFC; /* Base warna tengah tetap cerah bersih */
+          background-color: #F8FAFC;
           position: relative;
           z-index: 1;
         }
         
-        /* Pseudo-element penampung pendaran di area tepi */
         .moving-gradient-bg::before {
           content: '';
           position: fixed;
@@ -378,7 +377,6 @@ export default function Simulator() {
           left: -20%;
           width: 140%;
           height: 140%;
-          /* Gradasi gabungan biru soft, cyan, dan indigo transparan */
           background: conic-gradient(
             from 0deg,
             rgba(59, 130, 246, 0.04) 0%,
@@ -389,8 +387,8 @@ export default function Simulator() {
           );
           z-index: -1;
           pointer-events: none;
-          filter: blur(80px); /* Melembutkan gradasi agar menyatu natural */
-          animation: slowSpin 25s linear infinite; /* Putaran super lambat agar nyaman di mata */
+          filter: blur(80px);
+          animation: slowSpin 25s linear infinite;
         }
 
         @keyframes slowSpin {
@@ -398,7 +396,6 @@ export default function Simulator() {
           to { transform: rotate(360deg); }
         }
 
-        /* 💎 CARD GLASSMORPHISM ENHANCED */
         .glass-card {
           background: rgba(255, 255, 255, 0.85);
           backdrop-filter: blur(24px);
@@ -434,7 +431,7 @@ export default function Simulator() {
               ⚡ LIVE MULTIMODAL SPECTROMETER (SMART FAILOVER POOL)
             </span>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900 mt-2">
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">Glycemic spike</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">Glycemic Spike Dashboard</span>
             </h1>
           </div>
           <div className="flex items-center gap-4">
@@ -564,7 +561,7 @@ export default function Simulator() {
               </div>
             </div>
 
-            {/* BOX 2: SUGAR PILE DENSITY */}
+            {/* BOX 2: SUGAR PILE DENSITY (VISUALISASI INFOGRAFIS MODERN) */}
             <div className="glass-card rounded-[2rem] p-6 flex flex-col justify-between h-[210px] group">
               <div className="flex justify-between items-center border-b pb-3 border-slate-200/60">
                 <SectionTitle number="02" title="Sugar Pile Density" />
@@ -574,27 +571,21 @@ export default function Simulator() {
               </div>
 
               <div className="grid grid-cols-12 gap-4 items-center flex-1 pt-2">
-                <div className="col-span-5 bg-slate-50 h-24 rounded-2xl border border-slate-200/80 flex items-end justify-center p-1 relative overflow-hidden shadow-inner group-hover:border-slate-300 transition-colors duration-300">
-                  <div className="absolute top-1 left-2 text-[6px] font-mono font-bold text-slate-400 uppercase">3D Matrix</div>
-                  <svg className="w-full h-full relative z-10 overflow-visible" viewBox="0 0 100 50" preserveAspectRatio="none">
-                    <defs>
-                      <radialGradient id="sugar3DCoreLight" cx="50%" cy="30%" r="60%">
-                        <stop offset="0%" stopColor="#ffffff" />
-                        <stop offset="85%" stopColor="#e2e8f0" />
-                        <stop offset="100%" stopColor="#cbd5e1" />
-                      </radialGradient>
-                      <radialGradient id="floorShadowLight" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor="rgba(30,58,138,0.15)" />
-                        <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-                      </radialGradient>
-                    </defs>
-                    {foodImage && !isLoading && displaySugarGram > 0 && (
-                      <>
-                        <ellipse cx="50" cy="46" rx={sugarWidthRadius + 4} ry="3" fill="url(#floorShadowLight)" className="transition-all duration-1000" />
-                        <path d={`M ${50 - sugarWidthRadius} 46 Q 50 ${46 - sugarHeight} 50 ${46 - sugarHeight} Q 50 ${46 - sugarHeight} ${50 + sugarWidthRadius} 46 Z`} fill="url(#sugar3DCoreLight)" className="transition-all duration-1000 drop-shadow-sm" />
-                      </>
-                    )}
-                  </svg>
+                {/* REPRESENTASI DIAGRAM METRIK INFOGRAFIS */}
+                <div className="col-span-5 bg-slate-950 h-24 rounded-2xl border border-slate-800 flex flex-col justify-between p-3 relative overflow-hidden shadow-inner group-hover:border-slate-700 transition-colors duration-300">
+                  <div className="text-[7px] font-mono font-bold text-slate-500 uppercase tracking-wider">Density Track</div>
+                  
+                  <div className="w-full bg-slate-900 rounded-full h-3 border border-slate-800 overflow-hidden relative">
+                    <div 
+                      style={{ width: `${sugarPercentage}%` }}
+                      className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-1000 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[6px] font-mono text-slate-500">
+                    <span>0G (MIN)</span>
+                    <span>50G (MAX)</span>
+                  </div>
                 </div>
 
                 <div className="col-span-7 space-y-1">
@@ -656,7 +647,7 @@ export default function Simulator() {
                 </div>
               </div>
 
-              {/* Grafik Kurva */}
+              {/* Grafik Kurva Proyeksi */}
               <div className="p-4 bg-white border border-slate-100 rounded-2xl flex flex-col gap-2 shadow-sm hover:border-slate-200 transition-colors duration-300">
                 <span className="text-[9px] font-mono font-bold text-slate-400 block uppercase tracking-wider">Kurva Proyeksi Lonjakan Glukosa Tubuh:</span>
                 <div className="w-full h-14 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden relative shadow-inner">
@@ -729,7 +720,7 @@ export default function Simulator() {
                 <div>
                   <h3 className="text-sm font-bold">GlycoFlow Agent</h3>
                   <p className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span> Gemini 2.5 Flash Active
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span> Multi-Key Pool Active
                   </p>
                 </div>
               </div>

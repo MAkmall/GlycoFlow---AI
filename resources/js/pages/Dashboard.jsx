@@ -207,27 +207,22 @@ export default function Dashboard() {
     };
   }, []);
 
-  // --- ⏰ OTOMATIS RUN SINKRONISASI JIKA TOKEN SUDAH ADA (DENGAN FALLBACK PROD) ---
+  // --- ⏰ OTOMATIS RUN SINKRONISASI JIKA TOKEN SUDAH ADA ---
   useEffect(() => {
     if (isGoogleConnected && accessToken) {
-      // Jalankan fetching asli jika terhubung
       fetchGoogleFitBpmData(accessToken);
 
-      // Set polling rutin interval
       const googleFitPolling = setInterval(() => {
         fetchGoogleFitBpmData(accessToken);
       }, 15000); 
 
       return () => clearInterval(googleFitPolling);
     } 
-    // FIX PROD FALLBACK: Jika di server production/Vercel belum diklik koneksinya, 
-    // otomatis buat data visualisasi simulasi agar grafik Recharts tidak blank putih.
     else {
       if (bpmHistory.length === 0) {
         const mockHistory = [];
         const jamSekarang = new Date().getHours();
         
-        // Buat mock data logis dari jam 7 pagi sampai jam saat ini
         for (let i = 7; i <= Math.max(7, jamSekarang); i++) {
           const jamFormat = `${String(i).padStart(2, '0')}:00`;
           const randomBpm = Math.floor(Math.random() * (86 - 68 + 1)) + 68;
@@ -248,7 +243,7 @@ export default function Dashboard() {
     }
   }, [chatMessages, isChatLoading, isChatOpen]);
 
-  // --- 🔓 HANDLING SIGN-IN OAUTH 2.0 GOOGLE AND RE-SAVE TO STORAGE ---
+  // --- 🔓 HANDLING SIGN-IN OAUTH 2.0 GOOGLE ---
   const handleConnectGoogleFit = () => {
     if (!window.google) {
       alert("Google SDK belum siap, mohon tunggu beberapa detik atau refresh halaman.");
@@ -262,7 +257,6 @@ export default function Dashboard() {
         if (response.access_token) {
           console.log("🔑 Token Akses Berhasil Terbuka:", response.access_token);
           
-          // Simpan kredensial ke localStorage agar tidak hilang saat refresh/pindah route
           localStorage.setItem('gf_token', response.access_token);
           localStorage.setItem('gf_connected', 'true');
 
@@ -276,7 +270,7 @@ export default function Dashboard() {
     tokenClient.requestAccessToken();
   };
 
-  // --- 📡 FETCH DATA DARI GOOGLE FIT REST API + CACHING LOCALSTORAGE ---
+  // --- 📡 FETCH DATA DARI GOOGLE FIT REST API ---
   const fetchGoogleFitBpmData = async (token) => {
     try {
       const now = new Date();
@@ -412,7 +406,6 @@ export default function Dashboard() {
             const currentLatestBpm = formattedHistory[formattedHistory.length - 1].BPM;
             setBpm(currentLatestBpm);
             
-            // Simpan ke localStorage
             localStorage.setItem('gf_bpm', currentLatestBpm);
             localStorage.setItem('gf_bpm_history', JSON.stringify(formattedHistory));
             
@@ -429,7 +422,6 @@ export default function Dashboard() {
       }
     }
 
-    // Pembuatan mock data jika sandbox API asli kosong saat dipanggil
     if (bpmHistory.length === 0) {
       const mockHistory = [];
       const jamSekarang = new Date().getHours();
@@ -448,6 +440,7 @@ export default function Dashboard() {
     }
   };
 
+  // --- 🦾 PENANGANAN REQUEST CHATBOT GEMINI 2.5 FLASH ---
   const handleSendChat = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     const query = chatInput.trim();
@@ -458,20 +451,24 @@ export default function Dashboard() {
     setChatInput('');
     setIsChatLoading(true);
 
+    // List 4 Kunci API Baru Segar Anda
     const apiKeysPool = [
-      "AIzaSyCdZDb1JKPWm73SCqV-dOvO-mlaAxYKKBc", 
-      "AIzaSyCx6IqR7qNf-GdrJp8pO89SctpG9Qgn6cE", 
-      "AIzaSyBbG6zb-vRDn54zeOimi4G2r9YnZRXVYQs", 
-      "AIzaSyBBKovKkERpILbgWIy2vfiEfRH4zGuxKDk"  
+      import.meta.env.VITE_API_KEY_POOL_1,
+      import.meta.env.VITE_API_KEY_POOL_2,
+      import.meta.env.VITE_API_KEY_POOL_3,
+      import.meta.env.VITE_API_KEY_POOL_4
     ];
 
     let aiReply = "";
     let isSuccess = false;
+    let fallbackErrorMessage = "Terjadi kendala interaksi dengan server kecerdasan buatan Google.";
 
     for (let i = 0; i < apiKeysPool.length; i++) {
       const currentKey = apiKeysPool[i];
       try {
+        // 🔥 ENDPOINT DAN PENAMAAN RESMI UNTUK GEMINI 2.5 FLASH
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${currentKey}`;
+        
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -483,8 +480,15 @@ export default function Dashboard() {
         });
 
         const data = await response.json();
-        if (!response.ok || data.error) continue; 
+        
+        if (!response.ok) {
+          if (data.error?.message) {
+            fallbackErrorMessage = `API Error (${response.status}): ${data.error.message}`;
+          }
+          continue; 
+        }
 
+        // Penanganan Parsing JSON Respons Terstruktur Gemini 2.5 API
         if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
           aiReply = data.candidates[0].content.parts[0].text;
         } else if (data.candidates?.[0]?.text) {
@@ -496,6 +500,7 @@ export default function Dashboard() {
           break; 
         }
       } catch (err) {
+        fallbackErrorMessage = `Network Error: ${err.message || err}`;
         continue; 
       }
     }
@@ -503,7 +508,7 @@ export default function Dashboard() {
     if (isSuccess && aiReply) {
       setChatMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
     } else {
-      setChatMessages(prev => [...prev, { sender: 'ai', text: "Seluruh antrean kuota gratisan API Key Google Gemini 2.5 Anda saat ini telah habis terkapai." }]);
+      setChatMessages(prev => [...prev, { sender: 'ai', text: fallbackErrorMessage }]);
     }
     setIsChatLoading(false);
   };
@@ -561,7 +566,7 @@ export default function Dashboard() {
         {/* ================= INTERACTIVE MATRIX GRID ================= */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           
-          {/* BARIS ATAS - KIRI (Metrik Derivatif & HR Ring) */}
+          {/* BARIS ATAS - KIRI */}
           <div className="lg:col-span-4 flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="glass-card rounded-[2rem] p-5 flex flex-col justify-between border-b-4 border-b-blue-500 min-h-[110px]">
@@ -593,7 +598,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* BARIS ATAS - KANAN (GRAFIK TELEMETRI) */}
+          {/* BARIS ATAS - KANAN */}
           <div className="lg:col-span-8 flex flex-col">
             <div className="glass-card rounded-[2rem] p-6 flex flex-col justify-between h-full min-h-[360px]">
               <div>
@@ -682,7 +687,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 🕒 INDEPENDENT CIRCADIAN TRACKER CARD */}
+          {/* 🕒 CIRCADIAN TRACKER CARD */}
           <div className={`lg:col-span-6 bg-gradient-to-br ${circadian.color} rounded-[2rem] p-7 flex flex-col justify-between min-h-[210px] shadow-2xl text-white relative overflow-hidden group transition-all duration-700`}>
             <div className="absolute -right-5 -bottom-5 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700" />
             
