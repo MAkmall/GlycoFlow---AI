@@ -18,7 +18,7 @@ export default function Navbar() {
     },
     { 
       id: '/simulator', 
-      label: 'Analisis Piring', 
+      label: 'Glycemic Spike', 
       text: 'text-emerald-600',
       icon: (
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">

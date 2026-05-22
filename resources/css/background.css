@@ -1,0 +1,13 @@
+body {
+  /* Pastikan html dan body memiliki tinggi penuh agar gradasi sempurna */
+  height: 100vh;
+  margin: 0;
+  
+  /* Kode Gradasi Utama */
+  background-color: #FFD1DC; /* Warna fallback jika browser lama */
+  background-image: linear-gradient(135deg, #FFD1DC 0%, #BFEFFF 100%);
+  
+  /* Pastikan background tidak berulang jika konten halaman pendek */
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
